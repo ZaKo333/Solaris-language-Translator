@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>游戏文字翻译器</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Sora 翻译器</h1>
+            <p class="subtitle">上传游戏截图 → 识别自造文字 → 翻译为中文</p>
+        </header>
+
+        <div class="panel" style="margin-bottom:20px;">
+            <div class="tab-bar">
+                <button class="tab-btn active" onclick="switchTab('translate')">🔍 识别翻译</button>
+                <button class="tab-btn" onclick="switchTab('extract')">📸 提取模板</button>
+            </div>
+
+            <!-- 识别翻译 Tab -->
+            <div class="tab-content active" id="tab-translate">
+                <div class="main-layout" style="margin-top:0;">
+                    <div class="panel left-panel">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-icon">📁</div>
+                            <p class="upload-text">拖拽图片到此处</p>
+                            <p class="upload-hint">或点击选择文件</p>
+                            <input type="file" id="fileInput" accept="image/*" hidden>
+                            <button class="btn" onclick="document.getElementById('fileInput').click()">选择图片</button>
+                        </div>
+
+                        <div class="preview-area" id="previewArea" style="display:none;">
+                            <div class="panel-header">
+                                <h3>📷 预览</h3>
+                                <button class="btn btn-sm" onclick="resetUpload()">重新选择</button>
+                            </div>
+                            <img id="previewImg" src="" alt="预览图">
+                        </div>
+
+                        <div class="db-status" id="dbStatus">
+                            <span class="dot {{ 'green' if stats.ready else 'red' }}"></span>
+                            数据库：{{ stats.char_count }} 个字符模板
+                            {% if not stats.ready %}
+                            <br><span class="warn">⚠ 请先放入标准图到 char_db/</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="panel right-panel">
+                        <div class="action-bar">
+                            <button class="btn btn-primary" id="btnTranslate" onclick="doTranslate()" disabled>
+                                🔍 识别并翻译
+                            </button>
+                        </div>
+
+                        <div class="loading" id="loading" style="display:none;">
+                            <div class="spinner"></div>
+                            <p>正在识别字符并翻译...</p>
+                        </div>
+
+                        <div class="result-card" id="resultCard" style="display:none;">
+                            <div class="result-section">
+                                <div class="section-label">🔤 识别的英文字符</div>
+                                <div class="text-display mono" id="rawText">-</div>
+                            </div>
+                            <div class="result-section">
+                                <div class="section-label">🌏 中文翻译</div>
+                                <div class="text-display trans" id="translatedText">-</div>
+                            </div>
+                            <div class="result-stats">
+                                <span id="charCount">字符: -</span>
+                                <span id="confDisplay">置信度: -</span>
+                                <span id="uncertainDisplay">未识别: -</span>
+                            </div>
+                            <div class="detail-toggle" onclick="toggleDetails()">
+                                📋 每个字符详情 ▾
+                            </div>
+                            <div class="detail-wrap" id="detailWrap" style="display:none;">
+                                <table>
+                                    <thead><tr><th>#</th><th>字符</th><th>置信度</th><th>HOG</th><th>Edge</th><th>NCC</th><th>pHash</th></tr></thead>
+                                    <tbody id="detailBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 提取模板 Tab -->
+            <div class="tab-content" id="tab-extract">
+                <div class="panel" style="border:none; padding:0;">
+                    <p style="margin-bottom:8px; color:#aaa;">
+                        上传一张<b>已知文字</b>的游戏截图，自动提取字符模板。
+                    </p>
+                    <p class="extract-hint">
+                        例如：上传一张显示 "Banana" 的截图，在下方输入 Banana，系统会分割并保存每个字符的真实游戏渲染模板。
+                    </p>
+
+                    <div class="upload-area" id="extractUploadArea" style="padding:30px 20px;">
+                        <div class="upload-icon">📸</div>
+                        <p class="upload-text">拖拽游戏截图到此处</p>
+                        <p class="upload-hint">或点击选择</p>
+                        <input type="file" id="extractFileInput" accept="image/*" hidden>
+                        <button class="btn" onclick="document.getElementById('extractFileInput').click()">选择截图</button>
+                    </div>
+
+                    <div id="extractPreviewArea" style="display:none; margin-top:12px;">
+                        <div class="panel-header">
+                            <h3>📷 截图预览</h3>
+                            <button class="btn btn-sm" onclick="resetExtractUpload()">重新选择</button>
+                        </div>
+                        <img id="extractPreviewImg" src="" alt="截图预览" style="max-width:100%; max-height:200px; border-radius:8px; border:1px solid #333;">
+                    </div>
+
+                    <div class="extract-input-group">
+                        <input type="text" id="knownText" placeholder="输入截图中的已知文字，如 Banana" style="flex:1;">
+                        <button class="btn btn-primary" id="btnExtract" onclick="doExtract()" disabled>提取模板</button>
+                    </div>
+
+                    <div class="extract-loading" id="extractLoading" style="display:none; text-align:center; padding:20px;">
+                        <div class="spinner"></div>
+                        <p>正在分割并保存模板...</p>
+                    </div>
+
+                    <div class="extract-result" id="extractResult" style="display:none; margin-top:10px; padding:12px; background:#12121f; border-radius:8px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>第一步：放字符图 → 第二步：建映射表 → 第三步：上传截图翻译</p>
+        </footer>
+    </div>
+
+    <script>
+        let currentFile = null;
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+
+        uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+        uploadArea.addEventListener('drop', e => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) return alert('请上传图片文件');
+            if (file.size > 16*1024*1024) return alert('图片超过16MB');
+            currentFile = file;
+            const r = new FileReader();
+            r.onload = e => {
+                uploadArea.style.display = 'none';
+                document.getElementById('previewArea').style.display = 'block';
+                document.getElementById('previewImg').src = e.target.result;
+                document.getElementById('btnTranslate').disabled = false;
+            };
+            r.readAsDataURL(file);
+        }
+
+        function resetUpload() {
+            currentFile = null;
+            uploadArea.style.display = 'block';
+            document.getElementById('previewArea').style.display = 'none';
+            document.getElementById('resultCard').style.display = 'none';
+            document.getElementById('btnTranslate').disabled = true;
+            fileInput.value = '';
+        }
+
+        async function doTranslate() {
+            if (!currentFile) return;
+            const btn = document.getElementById('btnTranslate');
+            const loading = document.getElementById('loading');
+            const card = document.getElementById('resultCard');
+            btn.disabled = true;
+            loading.style.display = 'block';
+            card.style.display = 'none';
+
+            const fd = new FormData();
+            fd.append('image', currentFile);
+            try {
+                const r = await fetch('/api/translate', { method: 'POST', body: fd });
+                const d = await r.json();
+                loading.style.display = 'none';
+
+                if (!d.success) {
+                    card.style.display = 'block';
+                    document.getElementById('rawText').textContent = '❌ 识别失败';
+                    document.getElementById('translatedText').textContent = d.error || '未知错误';
+                    document.getElementById('charCount').textContent = '字符: -';
+                    document.getElementById('confDisplay').textContent = '错误';
+                    document.getElementById('uncertainDisplay').textContent = '';
+                    return;
+                }
+
+                card.style.display = 'block';
+                document.getElementById('rawText').textContent = d.raw_text || '(空)';
+                document.getElementById('translatedText').textContent = d.translated || '(空)';
+                document.getElementById('charCount').textContent = `字符: ${d.char_count}`;
+                document.getElementById('confDisplay').textContent = `置信度: ${(d.avg_confidence*100).toFixed(1)}%`;
+                const ue = document.getElementById('uncertainDisplay');
+                ue.textContent = `未识别: ${d.uncertain_count}`;
+                ue.style.color = d.uncertain_count > 0 ? '#e74c3c' : '#27ae60';
+
+                if (d.details && d.details.length) {
+                    const tb = document.getElementById('detailBody');
+                    tb.innerHTML = '';
+                    d.details.forEach(x => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `<td>${x.index+1}</td>
+                            <td class="char-cell">${x.char === '?' ? '❓' : x.char}</td>
+                            <td class="${x.confidence<0.5 ? 'low' : ''}">${(x.confidence*100).toFixed(1)}%</td>
+                            <td>${x.details ? (x.details.hog*100).toFixed(1)+'%' : '-'}</td>
+                            <td>${x.details ? (x.details.edge*100).toFixed(1)+'%' : '-'}</td>
+                            <td>${x.details ? (x.details.ncc*100).toFixed(1)+'%' : '-'}</td>
+                            <td>${x.details ? (x.details.phash*100).toFixed(1)+'%' : '-'}</td>`;
+                        tb.appendChild(tr);
+                    });
+                }
+            } catch(e) {
+                loading.style.display = 'none';
+                card.style.display = 'block';
+                document.getElementById('rawText').textContent = '网络错误';
+                document.getElementById('translatedText').textContent = e.message;
+            }
+            btn.disabled = false;
+        }
+
+        function toggleDetails() {
+            const w = document.getElementById('detailWrap');
+            w.style.display = w.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // ===== Tab Switching =====
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`.tab-btn[onclick*="${tab}"]`).classList.add('active');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+        }
+
+        // ===== Template Extraction =====
+        const extractFileInput = document.getElementById('extractFileInput');
+        extractFileInput.addEventListener('change', () => {
+            if (extractFileInput.files[0]) handleExtractFile(extractFileInput.files[0]);
+        });
+
+        const extractUploadArea = document.getElementById('extractUploadArea');
+        extractUploadArea.addEventListener('dragover', e => { e.preventDefault(); extractUploadArea.classList.add('drag-over'); });
+        extractUploadArea.addEventListener('dragleave', () => extractUploadArea.classList.remove('drag-over'));
+        extractUploadArea.addEventListener('drop', e => {
+            e.preventDefault();
+            extractUploadArea.classList.remove('drag-over');
+            if (e.dataTransfer.files[0]) handleExtractFile(e.dataTransfer.files[0]);
+        });
+
+        document.getElementById('knownText').addEventListener('input', updateExtractBtn);
+
+        let extractFile = null;
+
+        function handleExtractFile(file) {
+            if (!file.type.startsWith('image/')) return alert('请上传图片文件');
+            if (file.size > 16*1024*1024) return alert('图片超过16MB');
+            extractFile = file;
+            const r = new FileReader();
+            r.onload = e => {
+                extractUploadArea.style.display = 'none';
+                document.getElementById('extractPreviewArea').style.display = 'block';
+                document.getElementById('extractPreviewImg').src = e.target.result;
+                updateExtractBtn();
+            };
+            r.readAsDataURL(file);
+        }
+
+        function resetExtractUpload() {
+            extractFile = null;
+            extractUploadArea.style.display = 'block';
+            document.getElementById('extractPreviewArea').style.display = 'none';
+            document.getElementById('extractResult').style.display = 'none';
+            extractFileInput.value = '';
+            updateExtractBtn();
+        }
+
+        function updateExtractBtn() {
+            const btn = document.getElementById('btnExtract');
+            const hasFile = extractFile !== null;
+            const hasText = document.getElementById('knownText').value.trim().length > 0;
+            btn.disabled = !(hasFile && hasText);
+        }
+
+        async function doExtract() {
+            if (!extractFile) return;
+            const text = document.getElementById('knownText').value.trim();
+            if (!text) return alert('请输入已知文字');
+
+            const btn = document.getElementById('btnExtract');
+            const loading = document.getElementById('extractLoading');
+            const result = document.getElementById('extractResult');
+            btn.disabled = true;
+            loading.style.display = 'block';
+            result.style.display = 'none';
+
+            const fd = new FormData();
+            fd.append('image', extractFile);
+            fd.append('text', text);
+
+            try {
+                const r = await fetch('/api/extract_templates', { method: 'POST', body: fd });
+                const d = await r.json();
+                loading.style.display = 'none';
+
+                if (!d.success) {
+                    result.style.display = 'block';
+                    let msg = d.error;
+                    if (d.char_count && d.text_length) {
+                        msg += `<br><span class="warn">分割出 ${d.char_count} 个字符，文字长度 ${d.text_length}</span>`;
+                    }
+                    result.innerHTML = `<span class="warn">❌ ${msg}</span>`;
+                    btn.disabled = false;
+                    return;
+                }
+
+                let html = `<span class="ok">✅ 成功提取 ${d.total} 个模板！</span><br><br>`;
+                html += `<div>`;
+                for (const s of d.saved) {
+                    html += `<span class="char-tile">${s.char} → ${s.game_key}.png (${s.size})</span> `;
+                }
+                html += `</div>`;
+                html += `<br><span style="color:#888;font-size:.85rem;">数据库现有 ${d.db_char_count} 个模板</span>`;
+
+                result.style.display = 'block';
+                result.innerHTML = html;
+
+                // 刷新数据库统计
+                const sr = await fetch('/api/stats');
+                const sd = await sr.json();
+                document.querySelector('.dot').className = 'dot green';
+                document.getElementById('dbStatus').innerHTML =
+                    `<span class="dot green"></span> 数据库：${sd.db_char_count} 个字符模板`;
+
+            } catch(e) {
+                loading.style.display = 'none';
+                result.style.display = 'block';
+                result.innerHTML = `<span class="warn">❌ 网络错误: ${e.message}</span>`;
+            }
+            btn.disabled = false;
+        }
+    </script>
+</body>
+</html>
